@@ -14,7 +14,7 @@
 
 use back::svh::Svh;
 use driver::session::Session;
-use driver::{driver, config};
+use driver::driver;
 use metadata::cstore;
 use metadata::cstore::{CStore, CrateSource};
 use metadata::decoder;
@@ -228,8 +228,7 @@ fn visit_item(e: &Env, i: &ast::Item) {
                             Some(k) => {
                                 if k.equiv(&("static")) {
                                     cstore::NativeStatic
-                                } else if (e.sess.targ_cfg.os == abi::OsMacos ||
-                                           e.sess.targ_cfg.os == abi::OsiOS) &&
+                                } else if (e.sess.target.target.is_like_osx) &&
                                           k.equiv(&("framework")) {
                                     cstore::NativeFramework
                                 } else if k.equiv(&("framework")) {
@@ -379,8 +378,7 @@ fn resolve_crate<'a>(e: &mut Env,
                 crate_name: name,
                 hash: hash.map(|a| &*a),
                 filesearch: e.sess.target_filesearch(),
-                os: e.sess.targ_cfg.os,
-                triple: e.sess.targ_cfg.target_strs.target_triple.as_slice(),
+                triple: e.sess.opts.target_triple.as_slice(),
                 root: root,
                 rejected_via_hash: vec!(),
                 rejected_via_triple: vec!(),
@@ -430,10 +428,9 @@ impl<'a> PluginMetadataReader<'a> {
 
     pub fn read_plugin_metadata(&mut self, krate: &ast::ViewItem) -> PluginMetadata {
         let info = extract_crate_info(&self.env, krate).unwrap();
-        let target_triple = self.env.sess.targ_cfg.target_strs.target_triple.as_slice();
+        let target_triple = self.env.sess.opts.target_triple.as_slice();
         let is_cross = target_triple != driver::host_triple();
         let mut should_link = info.should_link && !is_cross;
-        let os = config::get_os(driver::host_triple()).unwrap();
         let mut load_ctxt = loader::Context {
             sess: self.env.sess,
             span: krate.span,
@@ -442,7 +439,6 @@ impl<'a> PluginMetadataReader<'a> {
             hash: None,
             filesearch: self.env.sess.host_filesearch(),
             triple: driver::host_triple(),
-            os: os,
             root: &None,
             rejected_via_hash: vec!(),
             rejected_via_triple: vec!(),
@@ -454,7 +450,6 @@ impl<'a> PluginMetadataReader<'a> {
                 // try loading from target crates (only valid if there are
                 // no syntax extensions)
                 load_ctxt.triple = target_triple;
-                load_ctxt.os = self.env.sess.targ_cfg.os;
                 load_ctxt.filesearch = self.env.sess.target_filesearch();
                 let lib = load_ctxt.load_library_crate();
                 if decoder::get_plugin_registrar_fn(lib.metadata.as_slice()).is_some() {

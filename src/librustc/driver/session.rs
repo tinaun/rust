@@ -32,7 +32,7 @@ use std::cell::{Cell, RefCell};
 // Represents the data associated with a compilation
 // session for a single crate.
 pub struct Session {
-    pub targ_cfg: config::Config,
+    pub target: config::Config,
     pub opts: config::Options,
     pub cstore: CStore,
     pub parse_sess: ParseSess,
@@ -238,7 +238,7 @@ pub fn build_session_(sopts: config::Options,
     );
 
     let sess = Session {
-        targ_cfg: target_cfg,
+        target: target_cfg,
         opts: sopts,
         cstore: CStore::new(token::get_ident_interner()),
         parse_sess: p_s,

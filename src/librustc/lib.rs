@@ -42,6 +42,7 @@ extern crate getopts;
 extern crate graphviz;
 extern crate libc;
 extern crate llvm = "rustc_llvm";
+extern crate regex;
 extern crate rustc_back = "rustc_back";
 extern crate serialize;
 extern crate rbml;

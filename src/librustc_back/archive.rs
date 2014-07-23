@@ -15,7 +15,6 @@ use std::io::{fs, TempDir};
 use std::io;
 use std::os;
 use std::str;
-use syntax::abi;
 use ErrorHandler = syntax::diagnostic::Handler;
 
 pub static METADATA_FILENAME: &'static str = "rust.metadata.bin";
@@ -24,7 +23,8 @@ pub struct ArchiveConfig<'a> {
     pub handler: &'a ErrorHandler,
     pub dst: Path,
     pub lib_search_paths: Vec<Path>,
-    pub os: abi::Os,
+    pub slib_prefix: String,
+    pub slib_suffix: String,
     pub maybe_ar_prog: Option<String>
 }
 
@@ -32,7 +32,8 @@ pub struct Archive<'a> {
     handler: &'a ErrorHandler,
     dst: Path,
     lib_search_paths: Vec<Path>,
-    os: abi::Os,
+    slib_prefix: String,
+    slib_suffix: String,
     maybe_ar_prog: Option<String>
 }
 
@@ -97,12 +98,14 @@ fn run_ar(handler: &ErrorHandler, maybe_ar_prog: &Option<String>,
 
 impl<'a> Archive<'a> {
     fn new(config: ArchiveConfig<'a>) -> Archive<'a> {
-        let ArchiveConfig { handler, dst, lib_search_paths, os, maybe_ar_prog } = config;
+        let ArchiveConfig { handler, dst, lib_search_paths, slib_prefix, slib_suffix,
+            maybe_ar_prog } = config;
         Archive {
             handler: handler,
             dst: dst,
             lib_search_paths: lib_search_paths,
-            os: os,
+            slib_prefix: slib_prefix,
+            slib_suffix: slib_suffix,
             maybe_ar_prog: maybe_ar_prog
         }
     }
@@ -287,12 +290,11 @@ impl<'a> ArchiveBuilder<'a> {
     }
 
     fn find_library(&self, name: &str) -> Path {
-        let (osprefix, osext) = match self.archive.os {
-            abi::OsWin32 => ("", "lib"), _ => ("lib", "a"),
-        };
+        let (osprefix, osext) = (self.archive.slib_prefix.as_slice(),
+                                 self.archive.slib_suffix.as_slice());
         // On Windows, static libraries sometimes show up as libfoo.a and other
         // times show up as foo.lib
-        let oslibname = format!("{}{}.{}", osprefix, name, osext);
+        let oslibname = format!("{}{}{}", osprefix, name, osext);
         let unixlibname = format!("lib{}.a", name);
 
         for path in self.archive.lib_search_paths.iter() {

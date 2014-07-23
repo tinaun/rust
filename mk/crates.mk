@@ -72,7 +72,7 @@ DEPS_rustuv := std native:uv native:uv_support
 DEPS_native := std
 DEPS_syntax := std term serialize log fmt_macros debug
 DEPS_rustc := syntax flate arena serialize getopts rbml \
-              time log graphviz debug rustc_llvm rustc_back
+              time log graphviz debug rustc_llvm rustc_back regex
 DEPS_rustc_llvm := native:rustllvm libc std
 DEPS_rustc_back := std syntax rustc_llvm flate log libc
 DEPS_rustdoc := rustc native:hoedown serialize getopts \

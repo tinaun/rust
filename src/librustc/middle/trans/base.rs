@@ -80,8 +80,7 @@ use std::c_str::ToCStr;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::{i8, i16, i32, i64};
-use syntax::abi::{X86, X86_64, Arm, Mips, Mipsel, Rust, RustCall};
-use syntax::abi::{RustIntrinsic, Abi};
+use syntax::abi::{Rust, RustCall, RustIntrinsic, Abi};
 use syntax::ast_util::{local_def, is_local};
 use syntax::attr::AttrMetaMethods;
 use syntax::attr;
@@ -192,7 +191,7 @@ fn decl_fn(ccx: &CrateContext, name: &str, cc: llvm::CallConv,
         _ => {}
     }
 
-    if ccx.tcx.sess.opts.cg.no_redzone {
+    if ccx.tcx.sess.opts.cg.no_redzone.unwrap_or(ccx.tcx.sess.target.target.disable_redzone) {
         unsafe {
             llvm::LLVMAddFunctionAttribute(llfn,
                                            llvm::FunctionIndex as c_uint,
@@ -893,15 +892,14 @@ pub fn trans_external_path(ccx: &CrateContext, did: ast::DefId, t: ty::t) -> Val
     let name = csearch::get_symbol(&ccx.sess().cstore, did);
     match ty::get(t).sty {
         ty::ty_bare_fn(ref fn_ty) => {
-            match fn_ty.abi.for_target(ccx.sess().targ_cfg.os,
-                                       ccx.sess().targ_cfg.arch) {
-                Some(Rust) | Some(RustCall) => {
+            match fn_ty.abi {
+                Rust | RustCall => {
                     get_extern_rust_fn(ccx, t, name.as_slice(), did)
                 }
-                Some(RustIntrinsic) => {
+                RustIntrinsic => {
                     ccx.sess().bug("unexpected intrinsic in trans_external_path")
                 }
-                Some(..) | None => {
+                _ => {
                     foreign::register_foreign_item_fn(ccx, fn_ty.abi, t,
                                                       name.as_slice(), None)
                 }
@@ -1100,9 +1098,10 @@ pub fn call_lifetime_end(cx: &Block, ptr: ValueRef) {
 pub fn call_memcpy(cx: &Block, dst: ValueRef, src: ValueRef, n_bytes: ValueRef, align: u32) {
     let _icx = push_ctxt("call_memcpy");
     let ccx = cx.ccx();
-    let key = match ccx.sess().targ_cfg.arch {
-        X86 | Arm | Mips | Mipsel => "llvm.memcpy.p0i8.p0i8.i32",
-        X86_64 => "llvm.memcpy.p0i8.p0i8.i64"
+    let key = match ccx.sess().target.target.target_word_size.as_slice() {
+        "32" => "llvm.memcpy.p0i8.p0i8.i32",
+        "64" => "llvm.memcpy.p0i8.p0i8.i64",
+        tws => fail!("Unsupported target word size for memcpy: {}", tws),
     };
     let memcpy = ccx.get_intrinsic(&key);
     let src_ptr = PointerCast(cx, src, Type::i8p(ccx));
@@ -1144,9 +1143,10 @@ fn memzero(b: &Builder, llptr: ValueRef, ty: Type) {
     let _icx = push_ctxt("memzero");
     let ccx = b.ccx;
 
-    let intrinsic_key = match ccx.sess().targ_cfg.arch {
-        X86 | Arm | Mips | Mipsel => "llvm.memset.p0i8.i32",
-        X86_64 => "llvm.memset.p0i8.i64"
+    let intrinsic_key = match ccx.sess().target.target.target_word_size.as_slice() {
+        "32" => "llvm.memset.p0i8.i32",
+        "64" => "llvm.memset.p0i8.i64",
+        tws => fail!("Unsupported target word size for memset: {}", tws),
     };
 
     let llintrinsicfn = ccx.get_intrinsic(&intrinsic_key);
@@ -2619,8 +2619,8 @@ pub fn write_metadata(cx: &CrateContext, krate: &ast::Crate) -> Vec<u8> {
     });
     unsafe {
         llvm::LLVMSetInitializer(llglobal, llconst);
-        let name = loader::meta_section_name(cx.sess().targ_cfg.os);
-        name.unwrap_or("rust_metadata").with_c_str(|buf| {
+        let name = loader::meta_section_name(cx.sess().target.target.is_like_osx);
+        name.with_c_str(|buf| {
             llvm::LLVMSetSection(llglobal, buf)
         });
     }

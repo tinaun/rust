@@ -47,18 +47,11 @@ pub enum Architecture {
     Mipsel
 }
 
-static IntelBits: u32 = (1 << (X86 as uint)) | (1 << (X86_64 as uint));
-static ArmBits: u32 = (1 << (Arm as uint));
-
 pub struct AbiData {
     abi: Abi,
 
     // Name of this ABI as we like it called.
     name: &'static str,
-
-    // Is it specific to a platform? If so, which one?  Also, what is
-    // the name that LLVM gives it (in case we disagree)
-    abi_arch: AbiArchitecture
 }
 
 pub enum AbiArchitecture {
@@ -72,22 +65,21 @@ pub enum AbiArchitecture {
 
 static AbiDatas: &'static [AbiData] = &[
     // Platform-specific ABIs
-    AbiData {abi: Cdecl, name: "cdecl", abi_arch: Archs(IntelBits)},
-    AbiData {abi: Stdcall, name: "stdcall", abi_arch: Archs(IntelBits)},
-    AbiData {abi: Fastcall, name:"fastcall", abi_arch: Archs(IntelBits)},
-    AbiData {abi: Aapcs, name: "aapcs", abi_arch: Archs(ArmBits)},
-    AbiData {abi: Win64, name: "win64",
-             abi_arch: Archs(1 << (X86_64 as uint))},
+    AbiData {abi: Cdecl, name: "cdecl" },
+    AbiData {abi: Stdcall, name: "stdcall" },
+    AbiData {abi: Fastcall, name:"fastcall" },
+    AbiData {abi: Aapcs, name: "aapcs" },
+    AbiData {abi: Win64, name: "win64" },
 
     // Cross-platform ABIs
     //
     // NB: Do not adjust this ordering without
     // adjusting the indices below.
-    AbiData {abi: Rust, name: "Rust", abi_arch: RustArch},
-    AbiData {abi: C, name: "C", abi_arch: AllArch},
-    AbiData {abi: System, name: "system", abi_arch: AllArch},
-    AbiData {abi: RustIntrinsic, name: "rust-intrinsic", abi_arch: RustArch},
-    AbiData {abi: RustCall, name: "rust-call", abi_arch: RustArch},
+    AbiData {abi: Rust, name: "Rust" },
+    AbiData {abi: C, name: "C" },
+    AbiData {abi: System, name: "system" },
+    AbiData {abi: RustIntrinsic, name: "rust-intrinsic" },
+    AbiData {abi: RustCall, name: "rust-call" },
 ];
 
 /// Returns the ABI with the given name (if any).
@@ -114,26 +106,18 @@ impl Abi {
         self.data().name
     }
 
-    pub fn for_target(&self, os: Os, arch: Architecture) -> Option<Abi> {
-        // If this ABI isn't actually for the specified architecture, then we
-        // short circuit early
-        match self.data().abi_arch {
-            Archs(a) if a & arch.bit() == 0 => return None,
-            Archs(_) | RustArch | AllArch => {}
-        }
-        // Transform this ABI as appropriate for the requested os/arch
-        // combination.
-        Some(match (*self, os, arch) {
-            (System, OsWin32, X86) => Stdcall,
-            (System, _, _) => C,
-            (me, _, _) => me,
+    pub fn for_target(&self, is_windows: bool, is_x86: bool) -> Option<Abi> {
+        // FIXME: open question: this used to know which calling convention was used on which arch
+        // (x86/arm, really), but that information seems... largely unimportant. Does it matter?
+        Some(if *self == System {
+            if is_windows && is_x86 {
+                Stdcall
+            } else {
+                C
+            }
+        } else {
+            *self
         })
-    }
-}
-
-impl Architecture {
-    fn bit(&self) -> u32 {
-        1 << (*self as uint)
     }
 }
 

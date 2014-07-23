@@ -70,9 +70,8 @@ struct LlvmSignature {
 
 pub fn llvm_calling_convention(ccx: &CrateContext,
                                abi: Abi) -> Option<CallConv> {
-    let os = ccx.sess().targ_cfg.os;
-    let arch = ccx.sess().targ_cfg.arch;
-    abi.for_target(os, arch).map(|abi| {
+    let t = &ccx.sess().target.target;
+    abi.for_target(t.is_like_windows, t.arch.as_slice() == "x86").map(|abi| {
         match abi {
             RustIntrinsic => {
                 // Intrinsics are emitted at the call site

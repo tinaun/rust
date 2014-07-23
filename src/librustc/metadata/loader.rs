@@ -222,7 +222,6 @@ use metadata::cstore::{MetadataBlob, MetadataVec, MetadataArchive};
 use metadata::decoder;
 use metadata::encoder;
 use metadata::filesearch::{FileSearch, FileMatches, FileDoesntMatch};
-use syntax::abi;
 use syntax::codemap::Span;
 use syntax::diagnostic::SpanHandler;
 use util::fs;
@@ -239,24 +238,6 @@ use std::collections::{HashMap, HashSet};
 use flate;
 use time;
 
-pub static MACOS_DLL_PREFIX: &'static str = "lib";
-pub static MACOS_DLL_SUFFIX: &'static str = ".dylib";
-
-pub static WIN32_DLL_PREFIX: &'static str = "";
-pub static WIN32_DLL_SUFFIX: &'static str = ".dll";
-
-pub static LINUX_DLL_PREFIX: &'static str = "lib";
-pub static LINUX_DLL_SUFFIX: &'static str = ".so";
-
-pub static FREEBSD_DLL_PREFIX: &'static str = "lib";
-pub static FREEBSD_DLL_SUFFIX: &'static str = ".so";
-
-pub static DRAGONFLY_DLL_PREFIX: &'static str = "lib";
-pub static DRAGONFLY_DLL_SUFFIX: &'static str = ".so";
-
-pub static ANDROID_DLL_PREFIX: &'static str = "lib";
-pub static ANDROID_DLL_SUFFIX: &'static str = ".so";
-
 pub struct CrateMismatch {
     path: Path,
     got: String,
@@ -269,7 +250,6 @@ pub struct Context<'a> {
     pub crate_name: &'a str,
     pub hash: Option<&'a Svh>,
     pub triple: &'a str,
-    pub os: abi::Os,
     pub filesearch: FileSearch<'a>,
     pub root: &'a Option<CratePaths>,
     pub rejected_via_hash: Vec<CrateMismatch>,
@@ -384,9 +364,10 @@ impl<'a> Context<'a> {
         }
 
         let dypair = self.dylibname();
+        let dypair = dypair.as_ref();
 
         // want: crate_name.dir_part() + prefix + crate_name.file_part + "-"
-        let dylib_prefix = dypair.map(|(prefix, _)| {
+        let dylib_prefix = dypair.map(|&(ref prefix, _)| {
             format!("{}{}", prefix, self.crate_name)
         });
         let rlib_prefix = format!("lib{}", self.crate_name);
@@ -415,11 +396,11 @@ impl<'a> Context<'a> {
                     file.ends_with(".rlib") {
                 (file.slice(rlib_prefix.len(), file.len() - ".rlib".len()),
                  true)
-            } else if dypair.map_or(false, |(_, suffix)| {
+            } else if dypair.map_or(false, |&(_, ref suffix)| {
                 file.starts_with(dylib_prefix.get_ref().as_slice()) &&
-                file.ends_with(suffix)
+                file.ends_with(suffix.as_slice())
             }) {
-                let (_, suffix) = dypair.unwrap();
+                let &(_, ref suffix) = dypair.unwrap();
                 let dylib_prefix = dylib_prefix.get_ref().as_slice();
                 (file.slice(dylib_prefix.len(), file.len() - suffix.len()),
                  false)
@@ -526,7 +507,7 @@ impl<'a> Context<'a> {
 
         for lib in m.move_iter() {
             info!("{} reading metadata from: {}", flavor, lib.display());
-            let metadata = match get_metadata_section(self.os, &lib) {
+            let metadata = match get_metadata_section(self.sess.target.target.is_like_osx, &lib) {
                 Ok(blob) => {
                     if self.crate_matches(blob.as_slice(), &lib) {
                         blob
@@ -613,16 +594,9 @@ impl<'a> Context<'a> {
 
     // Returns the corresponding (prefix, suffix) that files need to have for
     // dynamic libraries
-    fn dylibname(&self) -> Option<(&'static str, &'static str)> {
-        match self.os {
-            abi::OsWin32 => Some((WIN32_DLL_PREFIX, WIN32_DLL_SUFFIX)),
-            abi::OsMacos => Some((MACOS_DLL_PREFIX, MACOS_DLL_SUFFIX)),
-            abi::OsLinux => Some((LINUX_DLL_PREFIX, LINUX_DLL_SUFFIX)),
-            abi::OsAndroid => Some((ANDROID_DLL_PREFIX, ANDROID_DLL_SUFFIX)),
-            abi::OsFreebsd => Some((FREEBSD_DLL_PREFIX, FREEBSD_DLL_SUFFIX)),
-            abi::OsDragonfly => Some((DRAGONFLY_DLL_PREFIX, DRAGONFLY_DLL_SUFFIX)),
-            abi::OsiOS => None,
-        }
+    fn dylibname(&self) -> Option<(String, String)> {
+        let t = &self.sess.target.target;
+        Some((t.dll_prefix.clone(), t.dll_suffix.clone()))
     }
 
     fn find_commandline_library(&mut self) -> Option<Library> {
@@ -636,6 +610,7 @@ impl<'a> Context<'a> {
         // rlibs/dylibs.
         let sess = self.sess;
         let dylibname = self.dylibname();
+        let dylibname = dylibname.as_ref();
         let mut locs = locs.iter().map(|l| Path::new(l.as_slice())).filter(|loc| {
             if !loc.exists() {
                 sess.err(format!("extern location does not exist: {}",
@@ -647,8 +622,9 @@ impl<'a> Context<'a> {
                 return true
             } else {
                 match dylibname {
-                    Some((prefix, suffix)) => {
-                        if file.starts_with(prefix) && file.ends_with(suffix) {
+                    Some(&(ref prefix, ref suffix)) => {
+                        if file.starts_with(prefix.as_slice())
+                            && file.ends_with(suffix.as_slice()) {
                             return true
                         }
                     }
@@ -725,15 +701,15 @@ impl ArchiveMetadata {
 }
 
 // Just a small wrapper to time how long reading metadata takes.
-fn get_metadata_section(os: abi::Os, filename: &Path) -> Result<MetadataBlob, String> {
+fn get_metadata_section(is_osx: bool, filename: &Path) -> Result<MetadataBlob, String> {
     let start = time::precise_time_ns();
-    let ret = get_metadata_section_imp(os, filename);
+    let ret = get_metadata_section_imp(is_osx, filename);
     info!("reading {} => {}ms", filename.filename_display(),
            (time::precise_time_ns() - start) / 1000000);
     return ret;
 }
 
-fn get_metadata_section_imp(os: abi::Os, filename: &Path) -> Result<MetadataBlob, String> {
+fn get_metadata_section_imp(is_osx: bool, filename: &Path) -> Result<MetadataBlob, String> {
     if !filename.exists() {
         return Err(format!("no such file: '{}'", filename.display()));
     }
@@ -779,7 +755,7 @@ fn get_metadata_section_imp(os: abi::Os, filename: &Path) -> Result<MetadataBlob
             let name = string::raw::from_buf_len(name_buf as *const u8,
                                               name_len as uint);
             debug!("get_metadata_section: name {}", name);
-            if read_meta_section_name(os).as_slice() == name.as_slice() {
+            if read_meta_section_name(is_osx).as_slice() == name.as_slice() {
                 let cbuf = llvm::LLVMGetSectionContents(si.llsi);
                 let csz = llvm::LLVMGetSectionSize(si.llsi) as uint;
                 let mut found =
@@ -820,34 +796,26 @@ fn get_metadata_section_imp(os: abi::Os, filename: &Path) -> Result<MetadataBlob
     }
 }
 
-pub fn meta_section_name(os: abi::Os) -> Option<&'static str> {
-    match os {
-        abi::OsMacos => Some("__DATA,__note.rustc"),
-        abi::OsiOS => Some("__DATA,__note.rustc"),
-        abi::OsWin32 => Some(".note.rustc"),
-        abi::OsLinux => Some(".note.rustc"),
-        abi::OsAndroid => Some(".note.rustc"),
-        abi::OsFreebsd => Some(".note.rustc"),
-        abi::OsDragonfly => Some(".note.rustc"),
+pub fn meta_section_name(is_osx: bool) -> &'static str {
+    if is_osx {
+        "__DATA,__note.rustc"
+    } else {
+        ".note.rustc"
     }
 }
 
-pub fn read_meta_section_name(os: abi::Os) -> &'static str {
-    match os {
-        abi::OsMacos => "__note.rustc",
-        abi::OsiOS => unreachable!(),
-        abi::OsWin32 => ".note.rustc",
-        abi::OsLinux => ".note.rustc",
-        abi::OsAndroid => ".note.rustc",
-        abi::OsFreebsd => ".note.rustc",
-        abi::OsDragonfly => ".note.rustc"
+pub fn read_meta_section_name(is_osx: bool) -> &'static str {
+    if is_osx {
+        "__note.rustc"
+    } else {
+        ".note.rustc"
     }
 }
 
 // A diagnostic function for dumping crate metadata to an output stream
-pub fn list_file_metadata(os: abi::Os, path: &Path,
+pub fn list_file_metadata(is_osx: bool, path: &Path,
                           out: &mut io::Writer) -> io::IoResult<()> {
-    match get_metadata_section(os, path) {
+    match get_metadata_section(is_osx, path) {
         Ok(bytes) => decoder::list_crate_metadata(bytes.as_slice(), out),
         Err(msg) => {
             write!(out, "{}\n", msg)

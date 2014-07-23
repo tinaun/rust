@@ -9,7 +9,6 @@
 // except according to those terms.
 
 
-use syntax::abi::{OsWin32, OsMacos, OsiOS};
 use llvm::*;
 use super::cabi::*;
 use super::common::*;
@@ -35,19 +34,17 @@ pub fn compute_abi_info(ccx: &CrateContext,
         // Clang's ABI handling is in lib/CodeGen/TargetInfo.cpp
 
         enum Strategy { RetValue(Type), RetPointer }
-        let strategy = match ccx.sess().targ_cfg.os {
-            OsWin32 | OsMacos | OsiOS => {
-                match llsize_of_alloc(ccx, rty) {
-                    1 => RetValue(Type::i8(ccx)),
-                    2 => RetValue(Type::i16(ccx)),
-                    4 => RetValue(Type::i32(ccx)),
-                    8 => RetValue(Type::i64(ccx)),
-                    _ => RetPointer
-                }
+        let t = &ccx.sess().target.target;
+        let strategy = if t.is_like_osx || t.is_like_windows {
+            match llsize_of_alloc(ccx, rty) {
+                1 => RetValue(Type::i8(ccx)),
+                2 => RetValue(Type::i16(ccx)),
+                4 => RetValue(Type::i32(ccx)),
+                8 => RetValue(Type::i64(ccx)),
+                _ => RetPointer
             }
-            _ => {
-                RetPointer
-            }
+        } else {
+            RetPointer
         };
 
         match strategy {

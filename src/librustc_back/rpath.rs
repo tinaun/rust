@@ -12,13 +12,13 @@
 use std::collections::HashSet;
 use std::os;
 use std::io::IoError;
-use syntax::abi;
 use syntax::ast;
 
 pub struct RPathConfig<'a> {
-    pub os: abi::Os,
     pub used_crates: Vec<(ast::CrateNum, Option<Path>)>,
     pub out_filename: Path,
+    pub is_like_osx: bool,
+    pub has_rpath: bool,
     pub get_install_prefix_lib_path: ||:'a -> Path,
     pub realpath: |&Path|:'a -> Result<Path, IoError>
 }
@@ -26,23 +26,11 @@ pub struct RPathConfig<'a> {
 pub fn get_rpath_flags(config: RPathConfig) -> Vec<String> {
 
     // No rpath on windows
-    if config.os == abi::OsWin32 {
+    if !config.has_rpath {
         return Vec::new();
     }
 
     let mut flags = Vec::new();
-
-    if config.os == abi::OsFreebsd {
-        flags.push_all(["-Wl,-rpath,/usr/local/lib/gcc46".to_string(),
-                        "-Wl,-rpath,/usr/local/lib/gcc44".to_string(),
-                        "-Wl,-z,origin".to_string()]);
-    }
-    else if config.os == abi::OsDragonfly {
-        flags.push_all(["-Wl,-rpath,/usr/lib/gcc47".to_string(),
-                        "-Wl,-rpath,/usr/lib/gcc44".to_string(),
-                        "-Wl,-z,origin".to_string()]);
-    }
-
 
     debug!("preparing the RPATH!");
 
@@ -107,14 +95,11 @@ fn get_rpath_relative_to_output(config: &mut RPathConfig,
                                 lib: &Path) -> String {
     use std::os;
 
-    assert!(config.os != abi::OsWin32);
-
     // Mac doesn't appear to support $ORIGIN
-    let prefix = match config.os {
-        abi::OsAndroid | abi::OsLinux | abi::OsFreebsd | abi::OsDragonfly
-                          => "$ORIGIN",
-        abi::OsMacos => "@loader_path",
-        abi::OsWin32 | abi::OsiOS => unreachable!()
+    let prefix = if config.is_like_osx {
+        "@loader_path"
+    } else {
+        "$ORIGIN"
     };
 
     let mut lib = (config.realpath)(&os::make_absolute(lib)).unwrap();

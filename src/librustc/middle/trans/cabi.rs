@@ -16,7 +16,6 @@ use middle::trans::cabi_x86_64;
 use middle::trans::cabi_arm;
 use middle::trans::cabi_mips;
 use middle::trans::type_::Type;
-use syntax::abi::{X86, X86_64, Arm, Mips, Mipsel};
 
 #[deriving(Clone, PartialEq)]
 pub enum ArgKind {
@@ -105,11 +104,11 @@ pub fn compute_abi_info(ccx: &CrateContext,
                         atys: &[Type],
                         rty: Type,
                         ret_def: bool) -> FnType {
-    match ccx.sess().targ_cfg.arch {
-        X86 => cabi_x86::compute_abi_info(ccx, atys, rty, ret_def),
-        X86_64 => cabi_x86_64::compute_abi_info(ccx, atys, rty, ret_def),
-        Arm => cabi_arm::compute_abi_info(ccx, atys, rty, ret_def),
-        Mips => cabi_mips::compute_abi_info(ccx, atys, rty, ret_def),
-        Mipsel => cabi_mips::compute_abi_info(ccx, atys, rty, ret_def),
+    match ccx.sess().target.target.arch.as_slice() {
+        "x86" => cabi_x86::compute_abi_info(ccx, atys, rty, ret_def),
+        "x86_64" => cabi_x86_64::compute_abi_info(ccx, atys, rty, ret_def),
+        "arm" => cabi_arm::compute_abi_info(ccx, atys, rty, ret_def),
+        "mips" => cabi_mips::compute_abi_info(ccx, atys, rty, ret_def),
+        a => fail!("unrecognized arch \"{}\" in target descriptor, handle this better", a)
     }
 }

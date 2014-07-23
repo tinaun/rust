@@ -173,7 +173,7 @@ impl LintPass for TypeLimits {
                 match ty::get(ty::expr_ty(cx.tcx, e)).sty {
                     ty::ty_int(t) => {
                         let int_type = if t == ast::TyI {
-                            cx.sess().targ_cfg.int_type
+                            cx.sess().target.int_type
                         } else { t };
                         let (min, max) = int_ty_range(int_type);
                         let mut lit_val: i64 = match lit.node {
@@ -192,7 +192,7 @@ impl LintPass for TypeLimits {
                     },
                     ty::ty_uint(t) => {
                         let uint_type = if t == ast::TyU {
-                            cx.sess().targ_cfg.uint_type
+                            cx.sess().target.uint_type
                         } else { t };
                         let (min, max) = uint_ty_range(uint_type);
                         let lit_val: u64 = match lit.node {
